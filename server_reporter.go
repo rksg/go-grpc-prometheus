@@ -42,7 +42,11 @@ func (r *serverReporter) SentMessage() {
 }
 
 func (r *serverReporter) Handled(code codes.Code) {
-	r.incrementVectorWithLabels(r.metrics.serverHandledCounter)
+	if r.mlisaLabels == nil {
+		r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String(), "unknown", "unknown")
+	} else {
+		r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String(), r.mlisaLabels.Topic, r.mlisaLabels.ClusterID)
+	}
 
 	if r.metrics.serverHandledHistogramEnabled {
 		r.metrics.serverHandledHistogram.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Observe(time.Since(r.startTime).Seconds())
