@@ -19,9 +19,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	pb_testproto "github.com/grpc-ecosystem/go-grpc-prometheus/examples/testproto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	pb_testproto "github.com/rksg/go-grpc-prometheus/examples/testproto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"

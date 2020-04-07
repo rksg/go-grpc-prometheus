@@ -1,4 +1,6 @@
-module github.com/grpc-ecosystem/go-grpc-prometheus
+module github.com/rksg/go-grpc-prometheus
+
+go 1.14
 
 require (
 	github.com/golang/protobuf v1.2.0
