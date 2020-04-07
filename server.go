@@ -20,7 +20,10 @@ var (
 	UnaryServerInterceptor = DefaultServerMetrics.UnaryServerInterceptor()
 
 	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-	StreamServerInterceptor = DefaultServerMetrics.StreamServerInterceptor()
+	retrieveDummyMlisaLabels func(grpc.ServerStream) (MlisaLabels, error) = func(grpc.ServerStream) (MlisaLabels, error) {
+		return MlisaLabels{"default", "default"}, nil
+	}
+	StreamServerInterceptor = DefaultServerMetrics.StreamServerInterceptor(retrieveDummyMlisaLabels)
 )
 
 func init() {
