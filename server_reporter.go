@@ -53,6 +53,6 @@ func (r *serverReporter) incrementVectorWithLabels(vec *prom.CounterVec) {
 	if r.mlisaLabels == nil {
 		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, "unknown", "unknown")
 	} else {
-		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, r.mlisaLabels.topic, r.mlisaLabels.clusterID)
+		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, r.mlisaLabels.Topic, r.mlisaLabels.ClusterID)
 	}
 }

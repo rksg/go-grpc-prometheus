@@ -22,8 +22,8 @@ type ServerMetrics struct {
 }
 
 type MlisaLabels struct {
-	topic     string
-	clusterID string
+	Topic     string
+	ClusterID string
 }
 
 // NewServerMetrics returns a ServerMetrics object. Use a new instance of
