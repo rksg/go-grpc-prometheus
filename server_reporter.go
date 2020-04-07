@@ -43,9 +43,9 @@ func (r *serverReporter) SentMessage() {
 
 func (r *serverReporter) Handled(code codes.Code) {
 	if r.mlisaLabels == nil {
-		r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String(), "unknown", "unknown")
+		r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String(), "unknown", "unknown").Inc()
 	} else {
-		r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String(), r.mlisaLabels.Topic, r.mlisaLabels.ClusterID)
+		r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String(), r.mlisaLabels.Topic, r.mlisaLabels.ClusterID).Inc()
 	}
 
 	if r.metrics.serverHandledHistogramEnabled {
@@ -55,8 +55,8 @@ func (r *serverReporter) Handled(code codes.Code) {
 
 func (r *serverReporter) incrementVectorWithLabels(vec *prom.CounterVec) {
 	if r.mlisaLabels == nil {
-		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, "unknown", "unknown")
+		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, "unknown", "unknown").Inc()
 	} else {
-		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, r.mlisaLabels.Topic, r.mlisaLabels.ClusterID)
+		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, r.mlisaLabels.Topic, r.mlisaLabels.ClusterID).Inc()
 	}
 }
