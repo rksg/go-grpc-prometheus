@@ -6,7 +6,6 @@ package grpc_prometheus
 import (
 	"time"
 
-	prom "github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 )
 
@@ -16,47 +15,40 @@ type serverReporter struct {
 	serviceName string
 	methodName  string
 	startTime   time.Time
-	mlisaLabels *MlisaLabels
+	allLabels   []string
+	extraLabels []string
 }
 
-func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string, mlisaLabels *MlisaLabels) *serverReporter {
+func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string, extraLabels []string) *serverReporter {
 	r := &serverReporter{
-		metrics:     m,
-		rpcType:     rpcType,
-		mlisaLabels: mlisaLabels,
+		metrics: m,
+		rpcType: rpcType,
 	}
 	if r.metrics.serverHandledHistogramEnabled {
 		r.startTime = time.Now()
 	}
 	r.serviceName, r.methodName = splitMethodName(fullMethod)
-	r.incrementVectorWithLabels(r.metrics.serverStartedCounter)
+	r.extraLabels = extraLabels
+	r.allLabels = append([]string{string(r.rpcType), r.serviceName, r.methodName}, extraLabels...)
+
+	r.metrics.serverStartedCounter.WithLabelValues(r.allLabels...).Inc()
+
 	return r
 }
 
 func (r *serverReporter) ReceivedMessage() {
-	r.incrementVectorWithLabels(r.metrics.serverStreamMsgReceived)
+	r.metrics.serverStreamMsgReceived.WithLabelValues(r.allLabels...).Inc()
 }
 
 func (r *serverReporter) SentMessage() {
-	r.incrementVectorWithLabels(r.metrics.serverStreamMsgSent)
+	r.metrics.serverStreamMsgSent.WithLabelValues(r.allLabels...).Inc()
 }
 
 func (r *serverReporter) Handled(code codes.Code) {
-	if r.mlisaLabels == nil {
-		r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String(), "unknown", "unknown").Inc()
-	} else {
-		r.metrics.serverHandledCounter.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, code.String(), r.mlisaLabels.Topic, r.mlisaLabels.ClusterID).Inc()
-	}
+	labels := append([]string{string(r.rpcType), r.serviceName, r.methodName, code.String()}, r.extraLabels...)
+	r.metrics.serverHandledCounter.WithLabelValues(labels...).Inc()
 
 	if r.metrics.serverHandledHistogramEnabled {
 		r.metrics.serverHandledHistogram.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Observe(time.Since(r.startTime).Seconds())
-	}
-}
-
-func (r *serverReporter) incrementVectorWithLabels(vec *prom.CounterVec) {
-	if r.mlisaLabels == nil {
-		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, "unknown", "unknown").Inc()
-	} else {
-		vec.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName, r.mlisaLabels.Topic, r.mlisaLabels.ClusterID).Inc()
 	}
 }

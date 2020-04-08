@@ -19,40 +19,47 @@ type ServerMetrics struct {
 	serverHandledHistogramEnabled bool
 	serverHandledHistogramOpts    prom.HistogramOpts
 	serverHandledHistogram        *prom.HistogramVec
+	extraLabels                   []string
 }
 
-type MlisaLabels struct {
-	Topic     string
-	ClusterID string
-}
+type RetrieveExtralLabels func(grpc.ServerStream) ([]string, error)
 
 // NewServerMetrics returns a ServerMetrics object. Use a new instance of
 // ServerMetrics when not using the default Prometheus metrics registry, for
 // example when wanting to control which metrics are added to a registry as
 // opposed to automatically adding metrics via init functions.
-func NewServerMetrics(counterOpts ...CounterOption) *ServerMetrics {
+func NewServerMetrics(extraLabels []string, counterOpts ...CounterOption) *ServerMetrics {
 	opts := counterOptions(counterOpts)
+	labels := []string{"grpc_type", "grpc_service", "grpc_method"}
+	handledLabels := []string{"grpc_type", "grpc_service", "grpc_method", "grpc_code"}
+
+	if extraLabels != nil {
+		labels = append(labels, extraLabels...)
+		handledLabels = append(handledLabels, extraLabels...)
+	}
+
 	return &ServerMetrics{
+		extraLabels: extraLabels,
 		serverStartedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_started_total",
 				Help: "Total number of RPCs started on the server.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method", "mlisa_topic", "mlisa_cluster_id"}),
+			}), labels),
 		serverHandledCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_handled_total",
 				Help: "Total number of RPCs completed on the server, regardless of success or failure.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method", "grpc_code", "mlisa_topic", "mlisa_cluster_id"}),
+			}), handledLabels),
 		serverStreamMsgReceived: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_msg_received_total",
 				Help: "Total number of RPC stream messages received on the server.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method", "mlisa_topic", "mlisa_cluster_id"}),
+			}), labels),
 		serverStreamMsgSent: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_msg_sent_total",
 				Help: "Total number of gRPC stream messages sent by the server.",
-			}), []string{"grpc_type", "grpc_service", "grpc_method", "mlisa_topic", "mlisa_cluster_id"}),
+			}), labels),
 		serverHandledHistogramEnabled: false,
 		serverHandledHistogramOpts: prom.HistogramOpts{
 			Name:    "grpc_server_handling_seconds",
@@ -122,15 +129,19 @@ func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req i
 }
 
 // StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-func (m *ServerMetrics) StreamServerInterceptor(retrieveMlisaLabels func(ss grpc.ServerStream) (MlisaLabels, error)) func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+func (m *ServerMetrics) StreamServerInterceptor(retrieveExtraLabels RetrieveExtralLabels) func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 
 		var monitor *serverReporter
-		if mlisaLabels, err := retrieveMlisaLabels(ss); err == nil {
-			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, &mlisaLabels)
+		if extraLabels, err := retrieveExtraLabels(ss); err == nil {
+			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels)
 		} else {
-			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, nil)
+			unknownExtraLabels := make([]string, len(m.extraLabels))
+			for i := 0; i < len(m.extraLabels); i++ {
+				unknownExtraLabels[i] = "unknown"
+			}
+			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, unknownExtraLabels)
 		}
 		err := handler(srv, &monitoredServerStream{ss, monitor})
 		st, _ := grpcstatus.FromError(err)

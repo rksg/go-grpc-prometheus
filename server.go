@@ -14,16 +14,17 @@ var (
 	// DefaultServerMetrics is the default instance of ServerMetrics. It is
 	// intended to be used in conjunction the default Prometheus metrics
 	// registry.
-	DefaultServerMetrics = NewServerMetrics()
+	DefaultServerMetrics = NewServerMetrics([]string{})
 
 	// UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
 	UnaryServerInterceptor = DefaultServerMetrics.UnaryServerInterceptor()
 
-	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
-	retrieveDummyMlisaLabels func(grpc.ServerStream) (MlisaLabels, error) = func(grpc.ServerStream) (MlisaLabels, error) {
-		return MlisaLabels{"default", "default"}, nil
+	dummyRetrieveExtralLabels RetrieveExtralLabels = func(ss grpc.ServerStream) ([]string, error) {
+		return []string{"default", "default"}, nil
 	}
-	StreamServerInterceptor = DefaultServerMetrics.StreamServerInterceptor(retrieveDummyMlisaLabels)
+
+	// StreamServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Streaming RPCs.
+	StreamServerInterceptor = DefaultServerMetrics.StreamServerInterceptor(dummyRetrieveExtralLabels)
 )
 
 func init() {
