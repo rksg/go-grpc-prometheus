@@ -48,7 +48,9 @@ func (r *serverReporter) SentMessage() {
 func (r *serverReporter) Handled(code codes.Code) {
 	labels := append([]string{string(r.rpcType), r.serviceName, r.methodName, code.String()}, r.extraLabels...)
 	r.metrics.serverHandledCounter.WithLabelValues(labels...).Inc()
-	r.metrics.serverStreamCounter.WithLabelValues(labels...).Dec()
+
+	streamingLabels := append([]string{string(r.rpcType), r.serviceName, r.methodName}, r.extraLabels...)
+	r.metrics.serverStreamCounter.WithLabelValues(streamingLabels...).Dec()
 
 	if r.metrics.serverHandledHistogramEnabled {
 		r.metrics.serverHandledHistogram.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Observe(time.Since(r.startTime).Seconds())
