@@ -14,6 +14,7 @@ import (
 type ServerMetrics struct {
 	serverStartedCounter          *prom.CounterVec
 	serverHandledCounter          *prom.CounterVec
+	serverStreamCounter 					*prom.GaugeVec
 	serverStreamMsgReceived       *prom.CounterVec
 	serverStreamMsgSent           *prom.CounterVec
 	serverHandledHistogramEnabled bool
@@ -50,6 +51,11 @@ func NewServerMetrics(extraLabels []string, counterOpts ...CounterOption) *Serve
 				Name: "grpc_server_handled_total",
 				Help: "Total number of RPCs completed on the server, regardless of success or failure.",
 			}), handledLabels),
+		serverStreamCounter: prom.NewGaugeVec(
+			prom.GaugeOpts{
+				Name: "grpc_server_stream_total",
+				Help: "Total number of streaming RPCs running on the server.",
+			}, labels),
 		serverStreamMsgReceived: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_msg_received_total",
@@ -93,6 +99,7 @@ func (m *ServerMetrics) EnableHandlingTimeHistogram(opts ...HistogramOption) {
 func (m *ServerMetrics) Describe(ch chan<- *prom.Desc) {
 	m.serverStartedCounter.Describe(ch)
 	m.serverHandledCounter.Describe(ch)
+	m.serverStreamCounter.Describe(ch)
 	m.serverStreamMsgReceived.Describe(ch)
 	m.serverStreamMsgSent.Describe(ch)
 	if m.serverHandledHistogramEnabled {
@@ -106,6 +113,7 @@ func (m *ServerMetrics) Describe(ch chan<- *prom.Desc) {
 func (m *ServerMetrics) Collect(ch chan<- prom.Metric) {
 	m.serverStartedCounter.Collect(ch)
 	m.serverHandledCounter.Collect(ch)
+	m.serverStreamCounter.Collect(ch)
 	m.serverStreamMsgReceived.Collect(ch)
 	m.serverStreamMsgSent.Collect(ch)
 	if m.serverHandledHistogramEnabled {

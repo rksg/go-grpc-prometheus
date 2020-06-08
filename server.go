@@ -30,6 +30,7 @@ var (
 func init() {
 	prom.MustRegister(DefaultServerMetrics.serverStartedCounter)
 	prom.MustRegister(DefaultServerMetrics.serverHandledCounter)
+	prom.MustRegister(DefaultServerMetrics.serverStreamCounter)
 	prom.MustRegister(DefaultServerMetrics.serverStreamMsgReceived)
 	prom.MustRegister(DefaultServerMetrics.serverStreamMsgSent)
 }

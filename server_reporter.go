@@ -32,6 +32,7 @@ func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string, ex
 	r.allLabels = append([]string{string(r.rpcType), r.serviceName, r.methodName}, extraLabels...)
 
 	r.metrics.serverStartedCounter.WithLabelValues(r.allLabels...).Inc()
+	r.metrics.serverStreamCounter.WithLabelValues(r.allLabels...).Inc()
 
 	return r
 }
@@ -47,6 +48,7 @@ func (r *serverReporter) SentMessage() {
 func (r *serverReporter) Handled(code codes.Code) {
 	labels := append([]string{string(r.rpcType), r.serviceName, r.methodName, code.String()}, r.extraLabels...)
 	r.metrics.serverHandledCounter.WithLabelValues(labels...).Inc()
+	r.metrics.serverStreamCounter.WithLabelValues(labels...).Dec()
 
 	if r.metrics.serverHandledHistogramEnabled {
 		r.metrics.serverHandledHistogram.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Observe(time.Since(r.startTime).Seconds())
