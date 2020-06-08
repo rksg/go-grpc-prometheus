@@ -21,15 +21,18 @@ type ServerMetrics struct {
 	serverHandledHistogramOpts    prom.HistogramOpts
 	serverHandledHistogram        *prom.HistogramVec
 	extraLabels                   []string
+	resetMetrics                  ResetMetrics
 }
 
 type RetrieveExtralLabels func(grpc.ServerStream) ([]string, error)
+
+type ResetMetrics func([]string) bool
 
 // NewServerMetrics returns a ServerMetrics object. Use a new instance of
 // ServerMetrics when not using the default Prometheus metrics registry, for
 // example when wanting to control which metrics are added to a registry as
 // opposed to automatically adding metrics via init functions.
-func NewServerMetrics(extraLabels []string, counterOpts ...CounterOption) *ServerMetrics {
+func NewServerMetrics(extraLabels []string, resetMetrics ResetMetrics, counterOpts ...CounterOption) *ServerMetrics {
 	opts := counterOptions(counterOpts)
 	labels := []string{"grpc_type", "grpc_service", "grpc_method"}
 	handledLabels := []string{"grpc_type", "grpc_service", "grpc_method", "grpc_code"}
@@ -41,6 +44,7 @@ func NewServerMetrics(extraLabels []string, counterOpts ...CounterOption) *Serve
 
 	return &ServerMetrics{
 		extraLabels: extraLabels,
+		resetMetrics: resetMetrics,
 		serverStartedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_started_total",
@@ -124,7 +128,7 @@ func (m *ServerMetrics) Collect(ch chan<- prom.Metric) {
 // UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
 func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		monitor := newServerReporter(m, Unary, info.FullMethod, nil)
+		monitor := newServerReporter(m, Unary, info.FullMethod, nil, nil)
 		monitor.ReceivedMessage()
 		resp, err := handler(ctx, req)
 		st, _ := grpcstatus.FromError(err)
@@ -143,13 +147,13 @@ func (m *ServerMetrics) StreamServerInterceptor(retrieveExtraLabels RetrieveExtr
 
 		var monitor *serverReporter
 		if extraLabels, err := retrieveExtraLabels(ss); err == nil {
-			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels)
+			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels, m.resetMetrics)
 		} else {
 			unknownExtraLabels := make([]string, len(m.extraLabels))
 			for i := 0; i < len(m.extraLabels); i++ {
 				unknownExtraLabels[i] = "unknown"
 			}
-			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, unknownExtraLabels)
+			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, unknownExtraLabels, m.resetMetrics)
 		}
 		err := handler(srv, &monitoredServerStream{ss, monitor})
 		st, _ := grpcstatus.FromError(err)
