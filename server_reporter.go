@@ -10,22 +10,20 @@ import (
 )
 
 type serverReporter struct {
-	metrics      *ServerMetrics
-	rpcType      grpcType
-	serviceName  string
-	methodName   string
-	startTime    time.Time
-	allLabels    []string
-	extraLabels  []string
-	resetMetrics ResetMetrics
+	metrics     *ServerMetrics
+	rpcType     grpcType
+	serviceName string
+	methodName  string
+	startTime   time.Time
+	allLabels   []string
+	extraLabels []string
 }
 
-func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string, extraLabels []string, resetMetrics ResetMetrics) *serverReporter {
+func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string, extraLabels []string) *serverReporter {
 	r := &serverReporter{
-		metrics:      m,
-		rpcType:      rpcType,
-		extraLabels:  extraLabels,
-		resetMetrics: resetMetrics,
+		metrics:     m,
+		rpcType:     rpcType,
+		extraLabels: extraLabels,
 	}
 	if r.metrics.serverHandledHistogramEnabled {
 		r.startTime = time.Now()
@@ -51,16 +49,15 @@ func (r *serverReporter) Handled(code codes.Code) {
 	handledLabels := append([]string{string(r.rpcType), r.serviceName, r.methodName, code.String()}, r.extraLabels...)
 	r.metrics.serverHandledCounter.WithLabelValues(handledLabels...).Inc()
 
-	labels := append([]string{string(r.rpcType), r.serviceName, r.methodName}, r.extraLabels...)
-	if r.resetMetrics != nil && r.resetMetrics(r.extraLabels) {
-		r.metrics.serverStreamCounter.DeleteLabelValues(labels...)
-		r.metrics.serverStreamMsgReceived.DeleteLabelValues(labels...)
-		r.metrics.serverStreamMsgSent.DeleteLabelValues(labels...)
-	} else {
-		r.metrics.serverStreamCounter.WithLabelValues(labels...).Dec()
-	}
+	r.metrics.serverStreamCounter.WithLabelValues(r.allLabels...).Dec()
 
 	if r.metrics.serverHandledHistogramEnabled {
 		r.metrics.serverHandledHistogram.WithLabelValues(string(r.rpcType), r.serviceName, r.methodName).Observe(time.Since(r.startTime).Seconds())
 	}
+}
+
+func (r *serverReporter) ClearMetrics() {
+	r.metrics.serverStreamCounter.DeleteLabelValues(r.allLabels...)
+	r.metrics.serverStreamMsgReceived.DeleteLabelValues(r.allLabels...)
+	r.metrics.serverStreamMsgSent.DeleteLabelValues(r.allLabels...)
 }

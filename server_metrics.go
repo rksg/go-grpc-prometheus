@@ -2,6 +2,7 @@ package grpc_prometheus
 
 import (
 	"context"
+	"sync"
 
 	prom "github.com/prometheus/client_golang/prometheus"
 	"github.com/rksg/go-grpc-prometheus/packages/grpcstatus"
@@ -14,25 +15,27 @@ import (
 type ServerMetrics struct {
 	serverStartedCounter          *prom.CounterVec
 	serverHandledCounter          *prom.CounterVec
-	serverStreamCounter 					*prom.GaugeVec
+	serverStreamCounter           *prom.GaugeVec
 	serverStreamMsgReceived       *prom.CounterVec
 	serverStreamMsgSent           *prom.CounterVec
 	serverHandledHistogramEnabled bool
 	serverHandledHistogramOpts    prom.HistogramOpts
 	serverHandledHistogram        *prom.HistogramVec
 	extraLabels                   []string
-	resetMetrics                  ResetMetrics
+	getKeyLabel                   GetKeyLabel
+	mux                           sync.Mutex
+	labelMonitorMap               map[string]*serverReporter
 }
 
 type RetrieveExtralLabels func(grpc.ServerStream) ([]string, error)
 
-type ResetMetrics func([]string) bool
+type GetKeyLabel func([]string) string
 
 // NewServerMetrics returns a ServerMetrics object. Use a new instance of
 // ServerMetrics when not using the default Prometheus metrics registry, for
 // example when wanting to control which metrics are added to a registry as
 // opposed to automatically adding metrics via init functions.
-func NewServerMetrics(extraLabels []string, resetMetrics ResetMetrics, counterOpts ...CounterOption) *ServerMetrics {
+func NewServerMetrics(extraLabels []string, getKeyLabel GetKeyLabel, counterOpts ...CounterOption) *ServerMetrics {
 	opts := counterOptions(counterOpts)
 	labels := []string{"grpc_type", "grpc_service", "grpc_method"}
 	handledLabels := []string{"grpc_type", "grpc_service", "grpc_method", "grpc_code"}
@@ -43,8 +46,9 @@ func NewServerMetrics(extraLabels []string, resetMetrics ResetMetrics, counterOp
 	}
 
 	return &ServerMetrics{
-		extraLabels: extraLabels,
-		resetMetrics: resetMetrics,
+		extraLabels:     extraLabels,
+		getKeyLabel:     getKeyLabel,
+		labelMonitorMap: make(map[string]*serverReporter),
 		serverStartedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_started_total",
@@ -128,7 +132,7 @@ func (m *ServerMetrics) Collect(ch chan<- prom.Metric) {
 // UnaryServerInterceptor is a gRPC server-side interceptor that provides Prometheus monitoring for Unary RPCs.
 func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		monitor := newServerReporter(m, Unary, info.FullMethod, nil, nil)
+		monitor := newServerReporter(m, Unary, info.FullMethod, nil)
 		monitor.ReceivedMessage()
 		resp, err := handler(ctx, req)
 		st, _ := grpcstatus.FromError(err)
@@ -147,18 +151,39 @@ func (m *ServerMetrics) StreamServerInterceptor(retrieveExtraLabels RetrieveExtr
 
 		var monitor *serverReporter
 		if extraLabels, err := retrieveExtraLabels(ss); err == nil {
-			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels, m.resetMetrics)
+			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels)
+			m.saveMetricMonitor(extraLabels, monitor)
 		} else {
 			unknownExtraLabels := make([]string, len(m.extraLabels))
 			for i := 0; i < len(m.extraLabels); i++ {
 				unknownExtraLabels[i] = "unknown"
 			}
-			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, unknownExtraLabels, m.resetMetrics)
+			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, unknownExtraLabels)
 		}
 		err := handler(srv, &monitoredServerStream{ss, monitor})
 		st, _ := grpcstatus.FromError(err)
 		monitor.Handled(st.Code())
 		return err
+	}
+}
+
+func (m *ServerMetrics) saveMetricMonitor(extraLabels []string, monitor *serverReporter) {
+	if m.getKeyLabel != nil {
+		m.mux.Lock()
+		defer m.mux.Unlock()
+		keyLabel := m.getKeyLabel(extraLabels)
+		if keyLabel != "" {
+			m.labelMonitorMap[keyLabel] = monitor
+		}
+	}
+}
+
+func (m *ServerMetrics) ClearMetricsForKeyLabel(keyLabel string) {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+	if monitor, ok := m.labelMonitorMap[keyLabel]; ok {
+		monitor.ClearMetrics()
+		delete(m.labelMonitorMap, keyLabel)
 	}
 }
 
