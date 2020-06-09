@@ -24,7 +24,7 @@ type ServerMetrics struct {
 	extraLabels                   []string
 	getKeyLabel                   GetKeyLabel
 	mux                           sync.Mutex
-	labelMonitorMap               map[string]*serverReporter
+	labelMonitorMap               map[string][]*serverReporter
 }
 
 type RetrieveExtralLabels func(grpc.ServerStream) ([]string, error)
@@ -48,7 +48,7 @@ func NewServerMetrics(extraLabels []string, getKeyLabel GetKeyLabel, counterOpts
 	return &ServerMetrics{
 		extraLabels:     extraLabels,
 		getKeyLabel:     getKeyLabel,
-		labelMonitorMap: make(map[string]*serverReporter),
+		labelMonitorMap: make(map[string][]*serverReporter),
 		serverStartedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_started_total",
@@ -173,7 +173,11 @@ func (m *ServerMetrics) saveMetricMonitor(extraLabels []string, monitor *serverR
 		defer m.mux.Unlock()
 		keyLabel := m.getKeyLabel(extraLabels)
 		if keyLabel != "" {
-			m.labelMonitorMap[keyLabel] = monitor
+			if _, ok := m.labelMonitorMap[keyLabel]; ok {
+				m.labelMonitorMap[keyLabel] = append(m.labelMonitorMap[keyLabel], monitor)
+			} else {
+				m.labelMonitorMap[keyLabel] = []*serverReporter{monitor}
+			}
 		}
 	}
 }
@@ -181,8 +185,10 @@ func (m *ServerMetrics) saveMetricMonitor(extraLabels []string, monitor *serverR
 func (m *ServerMetrics) ClearMetricsForKeyLabel(keyLabel string) {
 	m.mux.Lock()
 	defer m.mux.Unlock()
-	if monitor, ok := m.labelMonitorMap[keyLabel]; ok {
-		monitor.ClearMetrics()
+	if monitors, ok := m.labelMonitorMap[keyLabel]; ok {
+		for _, m := range monitors {
+			m.ClearMetrics()
+		}
 		delete(m.labelMonitorMap, keyLabel)
 	}
 }
