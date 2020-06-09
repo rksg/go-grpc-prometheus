@@ -10,21 +10,21 @@ import (
 )
 
 type serverReporter struct {
-	metrics    		*ServerMetrics
-	rpcType    		grpcType
-	serviceName		string
-	methodName 		string
-	startTime  		time.Time
-	allLabels  		[]string
-	extraLabels		[]string
-	resetMetrics 	ResetMetrics
+	metrics      *ServerMetrics
+	rpcType      grpcType
+	serviceName  string
+	methodName   string
+	startTime    time.Time
+	allLabels    []string
+	extraLabels  []string
+	resetMetrics ResetMetrics
 }
 
 func newServerReporter(m *ServerMetrics, rpcType grpcType, fullMethod string, extraLabels []string, resetMetrics ResetMetrics) *serverReporter {
 	r := &serverReporter{
-		metrics: 			m,
-		rpcType: 			rpcType,
-		extraLabels: 	extraLabels,
+		metrics:      m,
+		rpcType:      rpcType,
+		extraLabels:  extraLabels,
 		resetMetrics: resetMetrics,
 	}
 	if r.metrics.serverHandledHistogramEnabled {
@@ -48,14 +48,16 @@ func (r *serverReporter) SentMessage() {
 }
 
 func (r *serverReporter) Handled(code codes.Code) {
-	labels := append([]string{string(r.rpcType), r.serviceName, r.methodName, code.String()}, r.extraLabels...)
-	r.metrics.serverHandledCounter.WithLabelValues(labels...).Inc()
+	handledLabels := append([]string{string(r.rpcType), r.serviceName, r.methodName, code.String()}, r.extraLabels...)
+	r.metrics.serverHandledCounter.WithLabelValues(handledLabels...).Inc()
 
+	labels := append([]string{string(r.rpcType), r.serviceName, r.methodName}, r.extraLabels...)
 	if r.resetMetrics != nil && r.resetMetrics(r.extraLabels) {
-		streamingLabels := append([]string{string(r.rpcType), r.serviceName, r.methodName}, r.extraLabels...)
-		r.metrics.serverStreamCounter.DeleteLabelValues(streamingLabels...)
-		r.metrics.serverStreamMsgReceived.DeleteLabelValues(streamingLabels...)
-		r.metrics.serverStreamMsgSent.DeleteLabelValues(streamingLabels...)
+		r.metrics.serverStreamCounter.DeleteLabelValues(labels...)
+		r.metrics.serverStreamMsgReceived.DeleteLabelValues(labels...)
+		r.metrics.serverStreamMsgSent.DeleteLabelValues(labels...)
+	} else {
+		r.metrics.serverStreamCounter.WithLabelValues(labels...).Dec()
 	}
 
 	if r.metrics.serverHandledHistogramEnabled {
