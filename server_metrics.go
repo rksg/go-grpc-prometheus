@@ -2,6 +2,7 @@ package grpc_prometheus
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	prom "github.com/prometheus/client_golang/prometheus"
@@ -148,21 +149,23 @@ func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req i
 func (m *ServerMetrics) StreamServerInterceptor(retrieveExtraLabels RetrieveExtralLabels) func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		var monitor *serverReporter
-		if extraLabels, err := retrieveExtraLabels(ss); err == nil {
-			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels)
-			m.saveMetricMonitor(extraLabels, monitor)
-		} else {
-			unknownExtraLabels := make([]string, len(m.extraLabels))
+		var (
+			monitor     *serverReporter
+			extraLabels []string
+			err         error
+		)
+		if extraLabels, err = retrieveExtraLabels(ss); err != nil {
+			extraLabels = make([]string, len(m.extraLabels))
 			for i := 0; i < len(m.extraLabels); i++ {
-				unknownExtraLabels[i] = "unknown"
+				extraLabels[i] = "unknown"
 			}
-			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, unknownExtraLabels)
 		}
-		err := handler(srv, &monitoredServerStream{ss, monitor})
-		st, _ := grpcstatus.FromError(err)
+		m.saveMetricMonitor(extraLabels, monitor)
+		monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels)
+		handlerErr := handler(srv, &monitoredServerStream{ss, monitor})
+		st, _ := grpcstatus.FromError(handlerErr)
 		monitor.Handled(st.Code())
-		return err
+		return handlerErr
 	}
 }
 
@@ -186,8 +189,13 @@ func (m *ServerMetrics) ClearMetricsForKeyLabel(keyLabel string) {
 		m.mux.Lock()
 		defer m.mux.Unlock()
 		if monitors, ok := m.labelMonitorMap[keyLabel]; ok {
+			clearedLabels := make(map[string]struct{})
 			for _, m := range monitors {
-				m.ClearMetrics()
+				joinLabels := strings.Join(m.allLabels, "|")
+				if _, ok := clearedLabels[joinLabels]; !ok {
+					m.ClearMetrics()
+					clearedLabels[joinLabels] = struct{}{}
+				}
 			}
 			delete(m.labelMonitorMap, keyLabel)
 		}
