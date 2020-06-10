@@ -60,4 +60,9 @@ func (r *serverReporter) ClearMetrics() {
 	r.metrics.serverStreamCounter.DeleteLabelValues(r.allLabels...)
 	r.metrics.serverStreamMsgReceived.DeleteLabelValues(r.allLabels...)
 	r.metrics.serverStreamMsgSent.DeleteLabelValues(r.allLabels...)
+	r.metrics.serverStartedCounter.DeleteLabelValues(r.allLabels...)
+	for _, code := range allCodes {
+		handledLabels := append([]string{string(r.rpcType), r.serviceName, r.methodName, code.String()}, r.extraLabels...)
+		r.metrics.serverHandledCounter.DeleteLabelValues(handledLabels...)
+	}
 }

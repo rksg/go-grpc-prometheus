@@ -148,7 +148,6 @@ func (m *ServerMetrics) UnaryServerInterceptor() func(ctx context.Context, req i
 func (m *ServerMetrics) StreamServerInterceptor(retrieveExtraLabels RetrieveExtralLabels) func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-
 		var monitor *serverReporter
 		if extraLabels, err := retrieveExtraLabels(ss); err == nil {
 			monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels)
@@ -183,13 +182,15 @@ func (m *ServerMetrics) saveMetricMonitor(extraLabels []string, monitor *serverR
 }
 
 func (m *ServerMetrics) ClearMetricsForKeyLabel(keyLabel string) {
-	m.mux.Lock()
-	defer m.mux.Unlock()
-	if monitors, ok := m.labelMonitorMap[keyLabel]; ok {
-		for _, m := range monitors {
-			m.ClearMetrics()
+	if m.getKeyLabel != nil {
+		m.mux.Lock()
+		defer m.mux.Unlock()
+		if monitors, ok := m.labelMonitorMap[keyLabel]; ok {
+			for _, m := range monitors {
+				m.ClearMetrics()
+			}
+			delete(m.labelMonitorMap, keyLabel)
 		}
-		delete(m.labelMonitorMap, keyLabel)
 	}
 }
 
