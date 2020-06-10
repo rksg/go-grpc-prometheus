@@ -25,12 +25,14 @@ type ServerMetrics struct {
 	extraLabels                   []string
 	getKeyLabel                   GetKeyLabel
 	mux                           sync.Mutex
-	labelMonitorMap               map[string][]*serverReporter
+	monitorCache                  map[string]LabelsMonitorMap
 }
 
 type RetrieveExtralLabels func(grpc.ServerStream) ([]string, error)
 
 type GetKeyLabel func([]string) string
+
+type LabelsMonitorMap map[string]*serverReporter
 
 // NewServerMetrics returns a ServerMetrics object. Use a new instance of
 // ServerMetrics when not using the default Prometheus metrics registry, for
@@ -47,9 +49,9 @@ func NewServerMetrics(extraLabels []string, getKeyLabel GetKeyLabel, counterOpts
 	}
 
 	return &ServerMetrics{
-		extraLabels:     extraLabels,
-		getKeyLabel:     getKeyLabel,
-		labelMonitorMap: make(map[string][]*serverReporter),
+		extraLabels:  extraLabels,
+		getKeyLabel:  getKeyLabel,
+		monitorCache: make(map[string]LabelsMonitorMap),
 		serverStartedCounter: prom.NewCounterVec(
 			opts.apply(prom.CounterOpts{
 				Name: "grpc_server_started_total",
@@ -160,8 +162,8 @@ func (m *ServerMetrics) StreamServerInterceptor(retrieveExtraLabels RetrieveExtr
 				extraLabels[i] = "unknown"
 			}
 		}
-		m.saveMetricMonitor(extraLabels, monitor)
 		monitor = newServerReporter(m, streamRPCType(info), info.FullMethod, extraLabels)
+		m.saveMetricMonitor(monitor)
 		handlerErr := handler(srv, &monitoredServerStream{ss, monitor})
 		st, _ := grpcstatus.FromError(handlerErr)
 		monitor.Handled(st.Code())
@@ -169,17 +171,17 @@ func (m *ServerMetrics) StreamServerInterceptor(retrieveExtraLabels RetrieveExtr
 	}
 }
 
-func (m *ServerMetrics) saveMetricMonitor(extraLabels []string, monitor *serverReporter) {
+func (m *ServerMetrics) saveMetricMonitor(monitor *serverReporter) {
 	if m.getKeyLabel != nil {
 		m.mux.Lock()
 		defer m.mux.Unlock()
-		keyLabel := m.getKeyLabel(extraLabels)
+		keyLabel := m.getKeyLabel(monitor.extraLabels)
 		if keyLabel != "" {
-			if _, ok := m.labelMonitorMap[keyLabel]; ok {
-				m.labelMonitorMap[keyLabel] = append(m.labelMonitorMap[keyLabel], monitor)
-			} else {
-				m.labelMonitorMap[keyLabel] = []*serverReporter{monitor}
+			monitorMapKey := strings.Join(monitor.allLabels, "|")
+			if _, ok := m.monitorCache[keyLabel]; !ok {
+				m.monitorCache[keyLabel] = make(LabelsMonitorMap)
 			}
+			m.monitorCache[keyLabel][monitorMapKey] = monitor
 		}
 	}
 }
@@ -188,16 +190,11 @@ func (m *ServerMetrics) ClearMetricsForKeyLabel(keyLabel string) {
 	if m.getKeyLabel != nil {
 		m.mux.Lock()
 		defer m.mux.Unlock()
-		if monitors, ok := m.labelMonitorMap[keyLabel]; ok {
-			clearedLabels := make(map[string]struct{})
+		if monitors, ok := m.monitorCache[keyLabel]; ok {
 			for _, m := range monitors {
-				joinLabels := strings.Join(m.allLabels, "|")
-				if _, ok := clearedLabels[joinLabels]; !ok {
-					m.ClearMetrics()
-					clearedLabels[joinLabels] = struct{}{}
-				}
+				m.ClearMetrics()
 			}
-			delete(m.labelMonitorMap, keyLabel)
+			delete(m.monitorCache, keyLabel)
 		}
 	}
 }
