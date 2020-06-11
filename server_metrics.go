@@ -220,9 +220,9 @@ func (m *ServerMetrics) ClearMetricsForKeyLabel(keyLabel string) bool {
 				m.serverStreamMsgReceived.DeleteLabelValues(labels...)
 				m.serverStartedCounter.DeleteLabelValues(labels...)
 				for _, code := range allCodes {
-					var handledLabels []string
-					copy(handledLabels, labels[0:3])
-					handledLabels = append(handledLabels, code.String())
+					handledLabels := make([]string, len(labels)+1)
+					copy(handledLabels[0:], labels[0:3])
+					handledLabels[3] = code.String()
 					copy(handledLabels[4:], labels[3:])
 					m.serverHandledCounter.DeleteLabelValues(handledLabels...)
 				}
